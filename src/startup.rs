@@ -3,7 +3,7 @@ use std::net::TcpListener;
 use crate::routes::{health_check, subscribe};
 use actix_web::dev::Server;
 use actix_web::{web, App, HttpServer};
-use sqlx::{PgConnection, PgPool};
+use sqlx::PgPool;
 
 pub fn run(listener: TcpListener, connection_pool: PgPool) -> Result<Server, std::io::Error> {
     // web::Data wraps this as an Arc so that each worker can get a pointer to the PgConnection

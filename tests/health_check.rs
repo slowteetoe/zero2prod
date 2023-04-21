@@ -1,7 +1,8 @@
 use std::net::TcpListener;
 
-use sqlx::{Connection, PgConnection, PgPool};
-use zero2prod::configuration::get_configuration;
+use sqlx::{Connection, Executor, PgConnection, PgPool};
+use uuid::Uuid;
+use zero2prod::configuration::{get_configuration, DatabaseSettings};
 
 #[tokio::test]
 async fn health_check_works() {
@@ -79,12 +80,34 @@ async fn spawn_app() -> String {
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind a random port");
     let port = listener.local_addr().unwrap().port();
 
-    let configuration = get_configuration().expect("Failed to read configuration");
-    let connection_pool = PgPool::connect(&configuration.database.connection_string())
-        .await
-        .expect("failed to connect to postgres");
+    let mut configuration = get_configuration().expect("Failed to read configuration");
+    configuration.database.database_name = Uuid::new_v4().to_string();
+    let connection_pool = configure_database_for_tests(&configuration.database).await;
     let server =
         zero2prod::startup::run(listener, connection_pool).expect("failed to bind address");
     let _ = tokio::spawn(server);
     format!("http://127.0.0.1:{}", port)
+}
+
+// A little hacky, but we'll create a unique DB for every test so that we don't have to deal with transactions and rollback
+pub async fn configure_database_for_tests(config: &DatabaseSettings) -> PgPool {
+    let mut connection = PgConnection::connect(&config.connection_string_without_db())
+        .await
+        .expect("failed to connect to Postgres");
+
+    connection
+        .execute(format!(r#"CREATE DATABASE "{}";"#, config.database_name).as_str())
+        .await
+        .expect("failed to create ephemeral database");
+
+    let connection_pool = PgPool::connect(&config.connection_string())
+        .await
+        .expect("Failed to connect to ephemeral database");
+
+    sqlx::migrate!("./migrations")
+        .run(&connection_pool)
+        .await
+        .expect("Failed to migrate the DB");
+
+    connection_pool
 }
