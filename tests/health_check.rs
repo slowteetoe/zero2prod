@@ -4,13 +4,19 @@ use sqlx::{Connection, Executor, PgConnection, PgPool};
 use uuid::Uuid;
 use zero2prod::configuration::{get_configuration, DatabaseSettings};
 
+#[derive(Debug)]
+struct TestApp {
+    server_address: String,
+    db_connection_url: String,
+}
+
 #[tokio::test]
 async fn health_check_works() {
-    let server_address = spawn_app().await;
+    let test_app = spawn_app().await;
     let client = reqwest::Client::new();
 
     let response = client
-        .get(&format!("{}/health", &server_address))
+        .get(&format!("{}/health", &test_app.server_address))
         .send()
         .await
         .expect("Failed to execute request");
@@ -21,10 +27,9 @@ async fn health_check_works() {
 
 #[tokio::test]
 async fn subscribe_returns_200_for_valid_form_data() {
-    let address = spawn_app().await;
-    let configuration = get_configuration().expect("failed to read configuration");
+    let test_app = spawn_app().await;
 
-    let mut connection = PgConnection::connect(&configuration.database.connection_string())
+    let mut connection = PgConnection::connect(&test_app.db_connection_url)
         .await
         .expect("failed to connect to postgres");
     let client = reqwest::Client::new();
@@ -32,7 +37,7 @@ async fn subscribe_returns_200_for_valid_form_data() {
     let body = "name=jose%20cuervo&email=josecuervo%40test.com";
 
     let response = client
-        .post(&format!("{}/subscriptions", &address))
+        .post(&format!("{}/subscriptions", &test_app.server_address))
         .header("Content-Type", "application/x-www-form-urlencoded")
         .body(body)
         .send()
@@ -51,7 +56,7 @@ async fn subscribe_returns_200_for_valid_form_data() {
 
 #[tokio::test]
 async fn subscribe_returns_400_when_data_missing() {
-    let address = spawn_app().await;
+    let test_app = spawn_app().await;
     let client = reqwest::Client::new();
     let test_cases = vec![
         ("name=jane%20doe", "missing the email"),
@@ -61,7 +66,7 @@ async fn subscribe_returns_400_when_data_missing() {
 
     for (invalid_body, error_message) in test_cases {
         let response = client
-            .post(&format!("{}/subscriptions", &address))
+            .post(&format!("{}/subscriptions", &test_app.server_address))
             .header("Content-Type", "application/x-www-form-urlencoded")
             .body(invalid_body)
             .send()
@@ -76,7 +81,7 @@ async fn subscribe_returns_400_when_data_missing() {
     }
 }
 
-async fn spawn_app() -> String {
+async fn spawn_app() -> TestApp {
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind a random port");
     let port = listener.local_addr().unwrap().port();
 
@@ -86,7 +91,10 @@ async fn spawn_app() -> String {
     let server =
         zero2prod::startup::run(listener, connection_pool).expect("failed to bind address");
     let _ = tokio::spawn(server);
-    format!("http://127.0.0.1:{}", port)
+    TestApp {
+        server_address: format!("http://127.0.0.1:{}", port),
+        db_connection_url: configuration.database.connection_string(),
+    }
 }
 
 // A little hacky, but we'll create a unique DB for every test so that we don't have to deal with transactions and rollback
