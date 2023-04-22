@@ -24,9 +24,23 @@ pub async fn subscribe(form: web::Form<FormData>, pool: web::Data<PgPool>) -> Ht
     .await
     {
         Ok(_) => HttpResponse::Ok().finish(),
-        Err(e) => {
-            println!("Failed to insert subscription: {}", e);
-            HttpResponse::InternalServerError().finish()
-        }
+        Err(e) => match e {
+            sqlx::Error::Database(err) => {
+                if err.constraint() == Some("subscriptions_email_key") {
+                    println!("User is already subscribed");
+                    HttpResponse::NoContent().finish()
+                } else {
+                    println!(
+                        "Failed to insert subscription due to database error: {}",
+                        err
+                    );
+                    HttpResponse::InternalServerError().finish()
+                }
+            }
+            _ => {
+                println!("Failed to insert subscription: {}", e);
+                HttpResponse::InternalServerError().finish()
+            }
+        },
     }
 }

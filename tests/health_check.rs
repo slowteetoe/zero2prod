@@ -55,6 +55,46 @@ async fn subscribe_returns_200_for_valid_form_data() {
 }
 
 #[tokio::test]
+async fn subscribe_returns_201_when_already_subscribed() {
+    let test_app = spawn_app().await;
+    let mut connection = PgConnection::connect(&test_app.db_connection_url)
+        .await
+        .expect("failed to connect to postgres");
+    let client = reqwest::Client::new();
+
+    let body = "name=Imma%20Dup&email=immadup%40test.com";
+
+    let response = client
+        .post(&format!("{}/subscriptions", &test_app.server_address))
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .body(body)
+        .send()
+        .await
+        .expect("failed to execute request");
+    assert_eq!(200, response.status().as_u16());
+
+    let saved = sqlx::query!("SELECT email, name from subscriptions",)
+        .fetch_one(&mut connection)
+        .await
+        .expect("failed to fetch saved subscription");
+
+    assert_eq!(saved.email, "immadup@test.com");
+    assert_eq!(saved.name, "Imma Dup");
+
+    // resend the same info
+    let response = client
+        .post(&format!("{}/subscriptions", &test_app.server_address))
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .body(body)
+        .send()
+        .await
+        .expect("failed to execute request");
+
+    // somewhat controversial as to what the correct response to this would be, we'll go with 204 No Content since this isn't a real app
+    assert_eq!(204, response.status().as_u16());
+}
+
+#[tokio::test]
 async fn subscribe_returns_400_when_data_missing() {
     let test_app = spawn_app().await;
     let client = reqwest::Client::new();
