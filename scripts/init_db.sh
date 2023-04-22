@@ -22,19 +22,26 @@ DB_NAME="${POSTGRES_DB:=newsletter}"
 DB_PORT="${POSTGRES_PORT:=15432}"
 DB_HOST="${POSTGRES_HOST:=localhost}"
 
-# Launch Postgres using Docker
-docker run \
-  -e POSTGRES_USER=${DB_USER} \
-  -e POSTGRES_PASSWORD=${DB_PASSWORD} \
-  -e POSTGRES_DB=${DB_NAME} \
-  -p "${DB_PORT}":5432 \
-  -d postgres \
-  postgres -N 1000
+if [ "${SKIP_DOCKER}" != "true" ]; then
+  docker run \
+    -e POSTGRES_USER=${DB_USER} \
+    -e POSTGRES_PASSWORD=${DB_PASSWORD} \
+    -e POSTGRES_DB=${DB_NAME} \
+    -p "${DB_PORT}":5432 \
+    -d postgres \
+    postgres -N 1000
+fi
 
 export PGPASSWORD="${DB_PASSWORD}"
+RETRY_COUNT=0
 until psql -h "${DB_HOST}" -U "${DB_USER}" -p "${DB_PORT}" -d "postgres" -c '\q'; do
   >&2 echo "Postgres is still unavailable, sleeping..."
   sleep 1
+  RETRY_COUNT=$((RETRY_COUNT+=1))
+  if [ ${RETRY_COUNT} -gt 15 ]; then
+    echo >&2 "Postgres still unavailable after retries exhausted, giving up."
+    exit 1
+  fi
 done
 
 >&2 echo "Postgres is up and running on port ${DB_PORT}"
