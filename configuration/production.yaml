@@ -3,3 +3,4 @@ application:
 database:
   host: "host.docker.internal"
   port: 5432
+  require_ssl: true
