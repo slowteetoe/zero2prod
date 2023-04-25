@@ -17,3 +17,8 @@ To see the logs:
 ```sh
 TEST_LOG=true cargo test | bunyan
 ```
+
+## TODOS
+
+- get OpenTelemetry working (tracing-opentelemetry)
+- clean up Dockerfile, check out cargo-chef?
