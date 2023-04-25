@@ -1,6 +1,7 @@
 use std::net::TcpListener;
 
 use once_cell::sync::Lazy;
+use secrecy::{ExposeSecret, Secret};
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use uuid::Uuid;
 use zero2prod::{
@@ -26,7 +27,7 @@ static TRACING: Lazy<()> = Lazy::new(|| {
 #[derive(Debug)]
 struct TestApp {
     server_address: String,
-    db_connection_url: String,
+    db_connection_url: Secret<String>,
 }
 
 #[tokio::test]
@@ -48,7 +49,7 @@ async fn health_check_works() {
 async fn subscribe_returns_200_for_valid_form_data() {
     let test_app = spawn_app().await;
 
-    let mut connection = PgConnection::connect(&test_app.db_connection_url)
+    let mut connection = PgConnection::connect(&test_app.db_connection_url.expose_secret())
         .await
         .expect("failed to connect to postgres");
     let client = reqwest::Client::new();
@@ -76,7 +77,7 @@ async fn subscribe_returns_200_for_valid_form_data() {
 #[tokio::test]
 async fn subscribe_returns_201_when_already_subscribed() {
     let test_app = spawn_app().await;
-    let mut connection = PgConnection::connect(&test_app.db_connection_url)
+    let mut connection = PgConnection::connect(&test_app.db_connection_url.expose_secret())
         .await
         .expect("failed to connect to postgres");
     let client = reqwest::Client::new();
@@ -160,16 +161,17 @@ async fn spawn_app() -> TestApp {
 
 // A little hacky, but we'll create a unique DB for every test so that we don't have to deal with transactions and rollback
 pub async fn configure_database_for_tests(config: &DatabaseSettings) -> PgPool {
-    let mut connection = PgConnection::connect(&config.connection_string_without_db())
-        .await
-        .expect("failed to connect to Postgres");
+    let mut connection =
+        PgConnection::connect(&config.connection_string_without_db().expose_secret())
+            .await
+            .expect("failed to connect to Postgres");
 
     connection
         .execute(format!(r#"CREATE DATABASE "{}";"#, config.database_name).as_str())
         .await
         .expect("failed to create ephemeral database");
 
-    let connection_pool = PgPool::connect(&config.connection_string())
+    let connection_pool = PgPool::connect(&config.connection_string().expose_secret())
         .await
         .expect("Failed to connect to ephemeral database");
 
