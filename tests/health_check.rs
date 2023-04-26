@@ -141,7 +141,7 @@ async fn spawn_app() -> TestApp {
 
     let mut configuration = get_configuration().expect("Failed to read configuration");
     // prefix DB name so we can drop more easily
-    configuration.database.database_name = format!("z2p-{}", Uuid::new_v4().to_string());
+    configuration.database.database_name = format!("z2p-{}", Uuid::new_v4());
     let connection_pool = configure_database_for_tests(&configuration.database).await;
     let server =
         zero2prod::startup::run(listener, connection_pool.clone()).expect("failed to bind address");
