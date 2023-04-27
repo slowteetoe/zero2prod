@@ -1,10 +1,14 @@
 use std::net::TcpListener;
 
+use fake::{Fake, Faker};
 use once_cell::sync::Lazy;
+use secrecy::Secret;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use uuid::Uuid;
 use zero2prod::{
     configuration::{get_configuration, DatabaseSettings},
+    domain::SubscriberEmail,
+    email_client::EmailClient,
     telemetry::{get_subscriber, init_subscriber},
 };
 
@@ -170,8 +174,16 @@ async fn spawn_app() -> TestApp {
     // prefix DB name so we can drop more easily
     configuration.database.database_name = format!("z2p-{}", Uuid::new_v4());
     let connection_pool = configure_database_for_tests(&configuration.database).await;
-    let server =
-        zero2prod::startup::run(listener, connection_pool.clone()).expect("failed to bind address");
+    let sender = SubscriberEmail::parse(configuration.email_client.sender_email)
+        .expect("invalid sender address in config");
+    let email_client = EmailClient::new(
+        configuration.email_client.base_url,
+        sender,
+        Secret::new(Faker.fake()),
+    );
+
+    let server = zero2prod::startup::run(listener, connection_pool.clone(), email_client)
+        .expect("failed to bind address");
     let _ = tokio::spawn(server);
     TestApp {
         server_address: format!("http://127.0.0.1:{}", port),

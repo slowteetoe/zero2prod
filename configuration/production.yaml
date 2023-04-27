@@ -4,3 +4,8 @@ database:
   host: "host.docker.internal"
   port: 5432
   require_ssl: true
+email_client:
+  base_url: "https://api.postmarkapp.com"
+  sender_email: "steve@smlbuilds.com"
+  # note: we do NOT want to put a secret token into source control, this will be handled in ENV
+  # authorization_token: "my-secret-token"
