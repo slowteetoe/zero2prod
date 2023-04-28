@@ -36,6 +36,10 @@ services:
       - key: APP_DATABASE__REQUIRE_SSL
         scope: RUN_TIME
         value: "true"
+      - key: APP_APPLICATION__BASE_URL
+        scope: RUN_TIME
+        # we'll use digital ocean's APP_URL to inject the dynamically provisioned base_url as an ENV variable
+        value: ${APP_URL}
 databases:
   - engine: PG
     name: newsletter
