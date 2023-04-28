@@ -174,12 +174,14 @@ async fn spawn_app() -> TestApp {
     // prefix DB name so we can drop more easily
     configuration.database.database_name = format!("z2p-{}", Uuid::new_v4());
     let connection_pool = configure_database_for_tests(&configuration.database).await;
-    let sender = SubscriberEmail::parse(configuration.email_client.sender_email)
+    let sender = SubscriberEmail::parse(configuration.email_client.sender_email.clone())
         .expect("invalid sender address in config");
+    let timeout = configuration.email_client.timeout();
     let email_client = EmailClient::new(
         configuration.email_client.base_url,
         sender,
         Secret::new(Faker.fake()),
+        timeout,
     );
 
     let server = zero2prod::startup::run(listener, connection_pool.clone(), email_client)
