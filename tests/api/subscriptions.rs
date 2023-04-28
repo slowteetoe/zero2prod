@@ -1,4 +1,6 @@
 use crate::helpers::spawn_app;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, ResponseTemplate};
 
 #[tokio::test]
 async fn subscribe_returns_200_for_valid_form_data() {
@@ -6,7 +8,14 @@ async fn subscribe_returns_200_for_valid_form_data() {
 
     let body = "name=jose%20cuervo&email=josecuervo%40test.com";
 
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&test_app.email_server)
+        .await;
+
     let response = test_app.post_subscriptions(body.into()).await;
+
     assert_eq!(200, response.status().as_u16());
 
     let saved = sqlx::query!("SELECT email, name from subscriptions",)
@@ -23,6 +32,12 @@ async fn subscribe_returns_201_when_already_subscribed() {
     let test_app = spawn_app().await;
 
     let body = "name=Imma%20Dup&email=immadup%40test.com";
+
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&test_app.email_server)
+        .await;
 
     let response = test_app.post_subscriptions(body.into()).await;
     assert_eq!(200, response.status().as_u16());
@@ -81,4 +96,19 @@ async fn subscribe_returns_400_when_data_missing() {
             error_message
         );
     }
+}
+
+#[tokio::test]
+async fn subscribe_sends_a_confirmation_email_for_valid_data() {
+    let app = spawn_app().await;
+    let body = "name=Jose&email=jose%40example.com";
+
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&app.email_server)
+        .await;
+
+    app.post_subscriptions(body.into()).await;
 }

@@ -7,7 +7,7 @@ database:
   password: "password"
   database_name: "newsletter"
 email_client:
-  base_url: "localhost"
+  base_url: "http://127.0.0.1"
   sender_email: "test@example.com"
   authorization_token: "my-secret-token"
   timeout_milliseconds: 3000
