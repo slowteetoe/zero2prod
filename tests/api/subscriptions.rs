@@ -3,17 +3,10 @@ use crate::helpers::spawn_app;
 #[tokio::test]
 async fn subscribe_returns_200_for_valid_form_data() {
     let test_app = spawn_app().await;
-    let client = reqwest::Client::new();
 
     let body = "name=jose%20cuervo&email=josecuervo%40test.com";
 
-    let response = client
-        .post(&format!("{}/subscriptions", &test_app.server_address))
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .body(body)
-        .send()
-        .await
-        .expect("failed to execute request");
+    let response = test_app.post_subscriptions(body.into()).await;
     assert_eq!(200, response.status().as_u16());
 
     let saved = sqlx::query!("SELECT email, name from subscriptions",)
@@ -28,17 +21,10 @@ async fn subscribe_returns_200_for_valid_form_data() {
 #[tokio::test]
 async fn subscribe_returns_201_when_already_subscribed() {
     let test_app = spawn_app().await;
-    let client = reqwest::Client::new();
 
     let body = "name=Imma%20Dup&email=immadup%40test.com";
 
-    let response = client
-        .post(&format!("{}/subscriptions", &test_app.server_address))
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .body(body)
-        .send()
-        .await
-        .expect("failed to execute request");
+    let response = test_app.post_subscriptions(body.into()).await;
     assert_eq!(200, response.status().as_u16());
 
     let saved = sqlx::query!("SELECT email, name from subscriptions",)
@@ -50,13 +36,7 @@ async fn subscribe_returns_201_when_already_subscribed() {
     assert_eq!(saved.name, "Imma Dup");
 
     // resend the same info
-    let response = client
-        .post(&format!("{}/subscriptions", &test_app.server_address))
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .body(body)
-        .send()
-        .await
-        .expect("failed to execute request");
+    let response = test_app.post_subscriptions(body.into()).await;
 
     // somewhat controversial as to what the correct response to this would be, we'll go with 204 No Content since this isn't a real app
     assert_eq!(204, response.status().as_u16());
@@ -65,7 +45,6 @@ async fn subscribe_returns_201_when_already_subscribed() {
 #[tokio::test]
 async fn subscribe_returns_400_when_fields_are_present_but_empty() {
     let test_app = spawn_app().await;
-    let client = reqwest::Client::new();
     let test_cases = vec![
         ("name=jane%20doe&email=", "empty email"),
         ("email=janedoe%40test.com&name=", "empty name"),
@@ -73,13 +52,7 @@ async fn subscribe_returns_400_when_fields_are_present_but_empty() {
     ];
 
     for (invalid_body, error_message) in test_cases {
-        let response = client
-            .post(&format!("{}/subscriptions", &test_app.server_address))
-            .header("Content-Type", "application/x-www-form-urlencoded")
-            .body(invalid_body)
-            .send()
-            .await
-            .expect("failed to execute request");
+        let response = test_app.post_subscriptions(invalid_body.into()).await;
         assert_eq!(
             400,
             response.status().as_u16(),
@@ -92,7 +65,7 @@ async fn subscribe_returns_400_when_fields_are_present_but_empty() {
 #[tokio::test]
 async fn subscribe_returns_400_when_data_missing() {
     let test_app = spawn_app().await;
-    let client = reqwest::Client::new();
+
     let test_cases = vec![
         ("name=jane%20doe", "missing the email"),
         ("email=janedoe%40test.com", "missing the name"),
@@ -100,13 +73,7 @@ async fn subscribe_returns_400_when_data_missing() {
     ];
 
     for (invalid_body, error_message) in test_cases {
-        let response = client
-            .post(&format!("{}/subscriptions", &test_app.server_address))
-            .header("Content-Type", "application/x-www-form-urlencoded")
-            .body(invalid_body)
-            .send()
-            .await
-            .expect("failed to execute request");
+        let response = test_app.post_subscriptions(invalid_body.into()).await;
         assert_eq!(
             400,
             response.status().as_u16(),
