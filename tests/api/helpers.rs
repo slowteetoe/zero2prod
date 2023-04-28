@@ -1,14 +1,10 @@
-use std::net::TcpListener;
-
-use fake::{Fake, Faker};
 use once_cell::sync::Lazy;
-use secrecy::Secret;
+
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use uuid::Uuid;
 use zero2prod::{
     configuration::{get_configuration, DatabaseSettings},
-    domain::SubscriberEmail,
-    email_client::EmailClient,
+    startup::{get_connection_pool, Application},
     telemetry::{get_subscriber, init_subscriber},
 };
 
@@ -36,29 +32,27 @@ pub struct TestApp {
 pub async fn spawn_app() -> TestApp {
     // The first time this is invoked, the code in `TRACING` will be executed. All other invocations will skip execution
     Lazy::force(&TRACING);
-    let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind a random port");
-    let port = listener.local_addr().unwrap().port();
 
-    let mut configuration = get_configuration().expect("Failed to read configuration");
-    // prefix DB name so we can drop more easily
-    configuration.database.database_name = format!("z2p-{}", Uuid::new_v4());
-    let connection_pool = configure_database_for_tests(&configuration.database).await;
-    let sender = SubscriberEmail::parse(configuration.email_client.sender_email.clone())
-        .expect("invalid sender address in config");
-    let timeout = configuration.email_client.timeout();
-    let email_client = EmailClient::new(
-        configuration.email_client.base_url,
-        sender,
-        Secret::new(Faker.fake()),
-        timeout,
-    );
+    let configuration = {
+        let mut c = get_configuration().expect("Failed to read configuration");
+        // prefix DB name so we can drop more easily
+        c.database.database_name = format!("z2p-{}", Uuid::new_v4());
+        // let OS choose a random port
+        c.application.port = 0;
+        c
+    };
 
-    let server = zero2prod::startup::run(listener, connection_pool.clone(), email_client)
-        .expect("failed to bind address");
-    let _ = tokio::spawn(server);
+    configure_database_for_tests(&configuration.database).await;
+
+    let application = Application::build(configuration.clone())
+        .await
+        .expect("Failed to build application");
+    let address = format!("http://127.0.0.1:{}", application.port());
+    let _ = tokio::spawn(application.run_until_stopped());
+
     TestApp {
-        server_address: format!("http://127.0.0.1:{}", port),
-        db_pool: connection_pool,
+        db_pool: get_connection_pool(&configuration.database),
+        server_address: address,
     }
 }
 
