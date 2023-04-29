@@ -1,5 +1,6 @@
 use actix_web::{web, HttpResponse};
 use chrono::Utc;
+use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -29,15 +30,31 @@ pub async fn subscribe(
         Ok(subscriber) => subscriber,
         Err(_) => return HttpResponse::BadRequest().finish(),
     };
+    let subscription_token = generate_subscription_token();
     match insert_subscriber(&pool, &new_subscriber).await {
-        Ok(_) => {
+        Ok(subscriber_id) => {
+            // store the token so that subscription can be confirmed
+            // it's better that we have extra rows in db (in case email fails to send)
+            // than if we have an email sent that can't be confirmed bc the db call failed
+            if store_token(&pool, subscriber_id, subscription_token.as_str())
+                .await
+                .is_err()
+            {
+                return HttpResponse::InternalServerError().finish();
+            }
             // send a (useless for now) email to the new subscriber
-            let send_result =
-                send_confirmation_email(&email_client, new_subscriber, &base_url.0).await;
+            let send_result = send_confirmation_email(
+                &email_client,
+                new_subscriber,
+                &base_url.0,
+                &subscription_token,
+            )
+            .await;
             if send_result.is_err() {
                 tracing::error!("{:?}", send_result);
                 return HttpResponse::InternalServerError().finish();
             }
+
             HttpResponse::Ok().finish()
         }
         Err(e) => match e {
@@ -61,13 +78,14 @@ pub async fn subscribe(
 pub async fn insert_subscriber(
     pool: &PgPool,
     new_subscriber: &NewSubscriber,
-) -> Result<(), sqlx::Error> {
+) -> Result<Uuid, sqlx::Error> {
+    let subscriber_id = Uuid::new_v4();
     sqlx::query!(
         r#"
     INSERT INTO subscriptions (id, email, name, subscribed_at, status)
     VALUES ($1, $2, $3, $4, 'pending_confirmation')
     "#,
-        Uuid::new_v4(),
+        &subscriber_id,
         &new_subscriber.email.as_ref(),
         &new_subscriber.name.as_ref(),
         Utc::now()
@@ -78,7 +96,7 @@ pub async fn insert_subscriber(
         tracing::error!("Failed to execute query: {:?}", e);
         e
     })?;
-    Ok(())
+    Ok(subscriber_id)
 }
 
 impl TryFrom<FormData> for NewSubscriber {
@@ -99,10 +117,11 @@ pub async fn send_confirmation_email(
     email_client: &EmailClient,
     new_subscriber: NewSubscriber,
     base_url: &str,
+    subscription_token: &str,
 ) -> Result<(), reqwest::Error> {
     let confirmation_link = format!(
-        "{}/subscriptions/confirm?subscription_token=mytoken",
-        base_url
+        "{}/subscriptions/confirm?subscription_token={}",
+        base_url, subscription_token,
     );
     let plain_body = format!(
         "Welcome to our newsletter!\nVisit {} to confirm your subscription.",
@@ -113,4 +132,38 @@ pub async fn send_confirmation_email(
     email_client
         .send_email(new_subscriber.email, "Welcome!", &html_body, &plain_body)
         .await
+}
+
+fn generate_subscription_token() -> String {
+    let mut rng = thread_rng();
+    std::iter::repeat_with(|| rng.sample(Alphanumeric))
+        .map(char::from)
+        .take(25)
+        .collect()
+}
+
+#[tracing::instrument(
+    name = "store subscriber token in database",
+    skip(subscription_token, pool)
+)]
+pub async fn store_token(
+    pool: &PgPool,
+    subscriber_id: Uuid,
+    subscription_token: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        r#"INSERT INTO subscription_tokens 
+    (subscription_token, subscriber_id)
+    VALUES 
+    ($1, $2)"#,
+        subscription_token,
+        subscriber_id
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to insert token: {:?}", e);
+        e
+    })?;
+    Ok(())
 }
