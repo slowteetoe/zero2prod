@@ -8,7 +8,7 @@ on:
     branches:
       - master
   pull_request:
-    types: [ opened, synchronize, reopened ]
+    types: [opened, synchronize, reopened]
     branches:
       - master
 
@@ -29,7 +29,7 @@ jobs:
           POSTGRES_PASSWORD: password
           POSTGRES_DB: newsletter
         ports:
-          - 15432:5432
+          - 5432:5432
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
@@ -37,12 +37,11 @@ jobs:
         with:
           key: sqlx-${{ env.SQLX_VERSION }}
       - name: Install sqlx-cli
-        run:
-            cargo install sqlx-cli
-            --version=${{ env.SQLX_VERSION }}
-            --features ${{ env.SQLX_FEATURES }}
-            --no-default-features
-            --locked
+        run: cargo install sqlx-cli
+          --version=${{ env.SQLX_VERSION }}
+          --features ${{ env.SQLX_FEATURES }}
+          --no-default-features
+          --locked
       - name: Migrate database
         run: |
           sudo apt-get install libpq-dev -y
@@ -75,7 +74,7 @@ jobs:
           POSTGRES_PASSWORD: password
           POSTGRES_DB: newsletter
         ports:
-          - 15432:5432
+          - 5432:5432
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
@@ -85,12 +84,11 @@ jobs:
         with:
           key: sqlx-${{ env.SQLX_VERSION }}
       - name: Install sqlx-cli
-        run:
-          cargo install sqlx-cli
-            --version=${{ env.SQLX_VERSION }}
-            --features ${{ env.SQLX_FEATURES }}
-            --no-default-features
-            --locked
+        run: cargo install sqlx-cli
+          --version=${{ env.SQLX_VERSION }}
+          --features ${{ env.SQLX_FEATURES }}
+          --no-default-features
+          --locked
       - name: Migrate database
         run: |
           sudo apt-get install libpq-dev -y
@@ -109,7 +107,7 @@ jobs:
           POSTGRES_PASSWORD: password
           POSTGRES_DB: newsletter
         ports:
-          - 15432:5432
+          - 5432:5432
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -122,8 +120,7 @@ jobs:
       - name: Install tarpaulin
         run: cargo install cargo-tarpaulin
       - name: Install sqlx-cli
-        run:
-          cargo install sqlx-cli
+        run: cargo install sqlx-cli
           --version=${{ env.SQLX_VERSION }}
           --features ${{ env.SQLX_FEATURES }}
           --no-default-features
