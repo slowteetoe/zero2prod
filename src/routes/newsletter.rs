@@ -64,10 +64,16 @@ async fn validate_credentials(
     credentials: Credentials,
     pool: &PgPool,
 ) -> Result<uuid::Uuid, PublishError> {
-    let (user_id, expected_password_hash) = get_stored_credentials(&credentials.username, &pool)
-        .await
-        .map_err(PublishError::UnexpectedError)?
-        .ok_or_else(|| PublishError::AuthError(anyhow::anyhow!("Unknown username")))?;
+    let mut user_id = None;
+    let mut expected_password_hash = Secret::new("$argon2id$v=19$m=19456,t=2,p=1$lIsG/hIMJMpZSUxDIXfcgA$02xG2zEU1qHB79JtxvIMkCll45dFQ1yFljj7KvfLCG0".to_string());
+    if let Some((stored_user_id, stored_password_hash)) =
+        get_stored_credentials(&credentials.username, pool)
+            .await
+            .map_err(PublishError::UnexpectedError)?
+    {
+        user_id = Some(stored_user_id);
+        expected_password_hash = stored_password_hash;
+    }
 
     // since verifying the password is actually CPU intensive (this takes roughly 20ms on my mac),
     // we need to offload to a separate threadpool for blocking operations so we don't block the executor
@@ -79,7 +85,10 @@ async fn validate_credentials(
     .context("Failed to spawn blocking task")
     .map_err(PublishError::UnexpectedError)??;
 
-    Ok(user_id)
+    // This is only set to 'Some' if we found credentials in the store
+    // So even if the default password somehow ends up matching with the provided password, we will never
+    // authenticate a non-existing user
+    user_id.ok_or_else(|| PublishError::AuthError(anyhow::anyhow!("Unknown username")))
 }
 
 #[tracing::instrument(

@@ -17,7 +17,13 @@ async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
         .mount(&app.email_server)
         .await;
 
-    let newsletter_request_body = serde_json::json!({"title":"Newsletter title", "content": {"text": "Newsletter body as text", "html": "<p>Newsletter body as html</p>",}});
+    let newsletter_request_body = serde_json::json!({
+        "title":"Newsletter title",
+        "content": {
+            "text": "Newsletter body as text",
+            "html": "<p>Newsletter body as html</p>",
+        }
+    });
 
     let response = app.post_newsletters(newsletter_request_body).await;
 
