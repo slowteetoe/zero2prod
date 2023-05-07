@@ -71,6 +71,22 @@ impl TestUser {
 }
 
 impl TestApp {
+    pub async fn post_login<Body>(&self, body: &Body) -> reqwest::Response
+    where
+        Body: serde::Serialize,
+    {
+        reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap()
+            .post(&format!("{}/login", &self.server_address))
+            // this `reqwest` method makes sure the body is URL-encoded and Content-Type is set correctly
+            .form(body)
+            .send()
+            .await
+            .expect("FAiled to execute request")
+    }
+
     pub async fn post_subscriptions(&self, body: String) -> reqwest::Response {
         reqwest::Client::new()
             .post(&format!("{}/subscriptions", &self.server_address))
@@ -181,4 +197,9 @@ pub async fn configure_database_for_tests(config: &DatabaseSettings) -> PgPool {
 pub struct ConfirmationLinks {
     pub html: reqwest::Url,
     pub plain_text: reqwest::Url,
+}
+
+pub fn assert_is_redirected_to(response: &reqwest::Response, location: &str) {
+    assert_eq!(303, response.status().as_u16());
+    assert_eq!(location, response.headers().get("Location").unwrap());
 }
