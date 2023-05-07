@@ -1,10 +1,12 @@
+mod admin;
 pub(crate) mod health_check;
-pub mod home;
+mod home;
 mod login;
 pub(crate) mod newsletter;
 pub(crate) mod subscriptions;
 pub(crate) mod subscriptions_confirm;
 
+pub use admin::*;
 pub use health_check::*;
 pub use home::*;
 pub use login::*;

@@ -2,6 +2,7 @@ application:
   port: 8000
   # You will need to set the APP_APPLICATION__HMAC_SECRET env variable on Digital Ocean as well for production
   hmac_secret: "zJDoc4!jD3XggoHGS97t#kob9sn9je8yaR&p#YebzJDoc4!jD3XggoHGS97t#kob9sn9je8yaR&p#Yeb"
+redis_uri: "redis://127.0.0.1:6379"
 database:
   host: "localhost"
   port: 5432

@@ -1,6 +1,7 @@
 use argon2::{password_hash::SaltString, Params, PasswordHasher};
 use once_cell::sync::Lazy;
 use reqwest::Url;
+use secrecy::Secret;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use uuid::Uuid;
 use wiremock::MockServer;
@@ -32,6 +33,7 @@ pub struct TestApp {
     pub port: u16,
     pub test_user: TestUser,
     pub api_client: reqwest::Client,
+    pub redis_uri: Secret<String>,
 }
 
 pub struct TestUser {
@@ -88,6 +90,17 @@ impl TestApp {
     pub async fn get_login_html(&self) -> String {
         self.api_client
             .get(&format!("{}/login", &self.server_address))
+            .send()
+            .await
+            .expect("Failed to execute request")
+            .text()
+            .await
+            .unwrap()
+    }
+
+    pub async fn get_admin_dashboard(&self) -> String {
+        self.api_client
+            .get(&format!("{}/admin/dashboard", &self.server_address))
             .send()
             .await
             .expect("Failed to execute request")
@@ -181,6 +194,7 @@ pub async fn spawn_app() -> TestApp {
         port: application_port,
         test_user: TestUser::generate(),
         api_client: client,
+        redis_uri: configuration.redis_uri.clone(),
     };
     test_app.test_user.store(&test_app.db_pool).await;
     test_app
