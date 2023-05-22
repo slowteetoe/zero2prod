@@ -31,7 +31,7 @@ pub async fn change_password(
     }
 
     let pwd_len = form.new_password.expose_secret().len();
-    if pwd_len < 12 || pwd_len > 128 {
+    if !(12..=128).contains(&pwd_len) {
         FlashMessage::error("Password length must be between 12 and 128 characters.").send();
         return Ok(see_other("/admin/password"));
     }
@@ -49,7 +49,7 @@ pub async fn change_password(
                 FlashMessage::error("The current password is incorrect.").send();
                 Ok(see_other("/admin/password"))
             }
-            AuthError::UnexpectedError(_) => Err(e500(e).into()),
+            AuthError::UnexpectedError(_) => Err(e500(e)),
         };
     }
 
