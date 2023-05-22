@@ -4,9 +4,10 @@ use crate::authentication::reject_anonymous_users;
 use crate::configuration::{DatabaseSettings, Settings};
 use crate::domain::SubscriberEmail;
 use crate::email_client::EmailClient;
+use crate::routes::newsletter::publish_newsletter;
 use crate::routes::{
     admin_dashboard, change_password, change_password_form, confirm, health_check, home, log_out,
-    login, login_form, publish_newsletter, subscribe,
+    login, login_form, subscribe,
 };
 
 use actix_session::storage::RedisSessionStore;
@@ -104,7 +105,6 @@ async fn run(
             .route("/health", web::get().to(health_check))
             .route("/subscriptions", web::post().to(subscribe))
             .route("/subscriptions/confirm", web::get().to(confirm))
-            .route("/newsletters", web::post().to(publish_newsletter))
             .route("/login", web::get().to(login_form))
             .route("/", web::get().to(home))
             .route("/login", web::post().to(login))
@@ -114,7 +114,8 @@ async fn run(
                     .route("/dashboard", web::get().to(admin_dashboard))
                     .route("/password", web::get().to(change_password_form))
                     .route("/password", web::post().to(change_password))
-                    .route("/logout", web::post().to(log_out)),
+                    .route("/logout", web::post().to(log_out))
+                    .route("/newsletters", web::post().to(publish_newsletter)),
             )
             .app_data(connection_pool.clone())
             .app_data(email_client.clone())
