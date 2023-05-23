@@ -18,6 +18,16 @@ To see the logs:
 TEST_LOG=true cargo test | bunyan
 ```
 
+## Cleaning up all those schemas
+
+Every test run creates a DB. If you are using a local database instead of Docker, you can't really just drop the container, which is why the ephemeral DBs intentionally have the prefix 'z2p-'
+
+How to delete them all?
+
+```sh
+psql -Atqc "SELECT 'DROP DATABASE ' || quote_ident(datname) || ';' FROM pg_database WHERE datname LIKE 'z2p-%';" | psql
+```
+
 ## TODOS
 
 - get OpenTelemetry working (tracing-opentelemetry)
