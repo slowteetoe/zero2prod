@@ -31,7 +31,7 @@ async fn logout_clears_session_state() {
     // follow redirect
     let html_page = app.get_login_html().await;
     assert!(
-        html_page.contains(&format!("You have successfully logged out.")),
+        html_page.contains(&"You have successfully logged out.".to_string()),
         "{}",
         html_page
     );
