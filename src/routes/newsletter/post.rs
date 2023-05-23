@@ -4,10 +4,12 @@ use crate::email_client::EmailClient;
 use crate::routes::error_chain_fmt;
 use actix_web::http::header;
 use actix_web::http::StatusCode;
+use actix_web::Either;
 use actix_web::{web, HttpResponse, ResponseError};
 use anyhow::Context;
 
 use reqwest::header::HeaderValue;
+use reqwest::Body;
 
 use sqlx::PgPool;
 
@@ -44,26 +46,50 @@ impl ResponseError for PublishError {
     }
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct BodyData {
     title: String,
     content: Content,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct Content {
     html: String,
     text: String,
 }
 
+#[derive(Debug, serde::Deserialize)]
+pub struct FormData {
+    title: String,
+    html_content: String,
+    text_content: String,
+}
+
 #[tracing::instrument(name = "Publish a newsletter", skip(body, pool, email_client), fields(user_id=tracing::field::Empty))]
 pub async fn publish_newsletter(
-    body: web::Json<BodyData>,
+    body: Either<web::Form<FormData>, web::Json<BodyData>>,
     pool: web::Data<PgPool>,
     email_client: web::Data<EmailClient>,
     user_id: web::ReqData<UserId>,
 ) -> Result<HttpResponse, PublishError> {
     tracing::Span::current().record("user_id", &tracing::field::display(*user_id));
+
+    let body: BodyData = match body {
+        Either::Right(json) => BodyData {
+            title: json.title.to_owned(),
+            content: Content {
+                html: json.content.html.to_owned(),
+                text: json.content.text.to_owned(),
+            },
+        },
+        Either::Left(form) => BodyData {
+            title: form.title.to_owned(),
+            content: Content {
+                html: form.html_content.to_owned(),
+                text: form.text_content.to_owned(),
+            },
+        },
+    };
 
     let subscribers = get_confirmed_subscribers(&pool).await?;
 

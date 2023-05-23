@@ -59,13 +59,13 @@ pub async fn publish_newsletter_form(flash_messages: IncomingFlashMessages) -> H
                   </div>
                   <br>
                   <div>
-                    <label for="content.html">HTML content</label>
-                    <textarea rows="4" cols="60" required="true" name="content.html"
+                    <label for="html_content">HTML content</label>
+                    <textarea rows="4" cols="60" required="true" name="html_content"
                       placeholder="Enter newsletter HTML content"></textarea>
                   </div>
                   <br>
-                  <label for="content.text">Plaintext content</label>
-                  <textarea rows="4" cols="60" required="true" name="content.text"
+                  <label for="text_content">Plaintext content</label>
+                  <textarea rows="4" cols="60" required="true" name="text_content"
                     placeholder="Enter newsletter plain text content"></textarea>
                   <br>
                   <button type="submit">Send Newsletter</button>
