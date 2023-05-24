@@ -10,7 +10,6 @@ use anyhow::Context;
 
 use reqwest::header::HeaderValue;
 
-
 use sqlx::PgPool;
 
 #[derive(thiserror::Error)]
