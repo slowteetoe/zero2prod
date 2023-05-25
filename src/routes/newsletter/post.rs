@@ -6,10 +6,10 @@ use actix_web::http::header;
 use actix_web::http::StatusCode;
 use actix_web::Either;
 use actix_web::{web, HttpResponse, ResponseError};
+use actix_web_flash_messages::FlashMessage;
 use anyhow::Context;
-
 use reqwest::header::HeaderValue;
-
+use reqwest::header::LOCATION;
 use sqlx::PgPool;
 
 #[derive(thiserror::Error)]
@@ -73,25 +73,34 @@ pub async fn publish_newsletter(
 ) -> Result<HttpResponse, PublishError> {
     tracing::Span::current().record("user_id", &tracing::field::display(*user_id));
 
+    let response_type;
     let body: BodyData = match body {
-        Either::Right(json) => BodyData {
-            title: json.title.to_owned(),
-            content: Content {
-                html: json.content.html.to_owned(),
-                text: json.content.text.to_owned(),
-            },
-        },
-        Either::Left(form) => BodyData {
-            title: form.title.to_owned(),
-            content: Content {
-                html: form.html_content.to_owned(),
-                text: form.text_content.to_owned(),
-            },
-        },
+        Either::Right(json) => {
+            response_type = "json".to_owned();
+            BodyData {
+                title: json.title.to_owned(),
+                content: Content {
+                    html: json.content.html.to_owned(),
+                    text: json.content.text.to_owned(),
+                },
+            }
+        }
+        Either::Left(form) => {
+            response_type = "html".to_owned();
+            BodyData {
+                title: form.title.to_owned(),
+                content: Content {
+                    html: form.html_content.to_owned(),
+                    text: form.text_content.to_owned(),
+                },
+            }
+        }
     };
 
     let subscribers = get_confirmed_subscribers(&pool).await?;
 
+    let mut sent = 0u16;
+    let mut errored = 0u16;
     for subscriber in subscribers {
         match subscriber {
             Ok(subscriber) => {
@@ -106,6 +115,7 @@ pub async fn publish_newsletter(
                     .with_context(|| {
                         format!("Failed to send newsletter to {}", subscriber.email)
                     })?;
+                sent += 1;
             }
             Err(error) => {
                 tracing::warn!(
@@ -113,10 +123,27 @@ pub async fn publish_newsletter(
                     error.cause_chain = ?error,
                     "Skipping a confirmed subscriber. Their stored contact details are invalid",
                 );
+                errored += 1;
             }
         }
     }
-    Ok(HttpResponse::Ok().finish())
+
+    // This is getting a little weird - we want to set a flash message if you're using the webpage
+    // Should probably return same data in a JSON response...
+    let response = match response_type.as_str() {
+        "html" => {
+            FlashMessage::info(format!(
+                "Newsletter sent - {} successfully, {} with errors.",
+                sent, errored
+            ))
+            .send();
+            HttpResponse::SeeOther()
+                .insert_header((LOCATION, "/admin/dashboard"))
+                .finish()
+        }
+        _ => HttpResponse::Ok().finish(),
+    };
+    Ok(response)
 }
 
 #[derive(Debug)]

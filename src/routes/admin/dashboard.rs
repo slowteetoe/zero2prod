@@ -1,16 +1,22 @@
 use crate::{authentication::UserId, utils::e500};
 use actix_web::{http::header::ContentType, web, HttpResponse};
+use actix_web_flash_messages::{IncomingFlashMessages, Level};
 use anyhow::Context;
 use sqlx::PgPool;
+use std::fmt::Write;
 use uuid::Uuid;
 
 pub async fn admin_dashboard(
     pool: web::Data<PgPool>,
     user_id: web::ReqData<UserId>,
+    flash_messages: IncomingFlashMessages,
 ) -> Result<HttpResponse, actix_web::Error> {
     let user_id = user_id.into_inner();
     let username = get_username(*user_id, &pool).await.map_err(e500)?;
-
+    let mut msg = String::new();
+    for m in flash_messages.iter().filter(|m| m.level() >= Level::Info) {
+        writeln!(msg, "<p><i>{}</i></p>", m.content()).unwrap();
+    }
     Ok(HttpResponse::Ok()
         .content_type(ContentType::html())
         .body(format!(
@@ -22,6 +28,7 @@ pub async fn admin_dashboard(
         </head>
         <body>
             <p>Welcome {username}</p>
+            {msg}
             <p>Available actions:</p>
             <ol>
               <li><a href="/admin/password">Change Password</a></li>
