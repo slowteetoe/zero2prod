@@ -22,7 +22,8 @@ async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
         "content": {
             "text": "Newsletter body as text",
             "html": "<p>Newsletter body as html</p>",
-        }
+        },
+        "idempotency_key": uuid::Uuid::new_v4().to_string(),
     });
 
     // login since we're not using basic auth any longer
@@ -56,7 +57,8 @@ async fn newsletters_are_delivered_to_confirmed_subscribers() {
         "content": {
             "text": "Newsletter body as plain text",
             "html": "<p>Newsletter body as html</p>",
-        }
+        },
+        "idempotency_key": uuid::Uuid::new_v4().to_string(),
     });
 
     // login
@@ -130,6 +132,24 @@ async fn unauthenticated_requests_are_directed_to_login() {
 }
 
 #[tokio::test]
+async fn you_must_be_logged_in_to_publish_a_newsletter() {
+    // Arrange
+    let app = spawn_app().await;
+
+    // Act
+    let newsletter_request_body = serde_json::json!({
+        "title": "Newsletter title",
+        "text_content": "Newsletter body as plain text",
+        "html_content": "<p>Newsletter body as HTML</p>",
+        "idempotency_key": uuid::Uuid::new_v4().to_string()
+    });
+    let response = app.post_newsletters_form(&newsletter_request_body).await;
+
+    // Assert
+    assert_is_redirected_to(&response, "/login");
+}
+
+#[tokio::test]
 async fn newsletter_creation_is_idempotent() {
     let app = spawn_app().await;
     create_confirmed_subscriber(&app).await;
@@ -154,7 +174,11 @@ async fn newsletter_creation_is_idempotent() {
     assert_is_redirected_to(&response, "/admin/dashboard");
     // follow the redirect
     let html_page = app.get_admin_dashboard_html().await;
-    assert!(html_page.contains("Newsletter sent"), "{}", html_page);
+    assert!(
+        html_page.contains("The newsletter issue has been published"),
+        "{}",
+        html_page
+    );
 
     // submit the newsletter form AGAIN with the same data
 
@@ -162,7 +186,11 @@ async fn newsletter_creation_is_idempotent() {
     assert_is_redirected_to(&response, "/admin/dashboard");
     // follow the redirect
     let html_page = app.get_admin_dashboard_html().await;
-    assert!(html_page.contains("Newsletter sent"), "{}", html_page);
+    assert!(
+        html_page.contains("The newsletter issue has been published"),
+        "{}",
+        html_page
+    );
 }
 
 async fn create_unconfirmed_subscriber(app: &TestApp) -> ConfirmationLinks {

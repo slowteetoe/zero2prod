@@ -1,7 +1,12 @@
 use crate::authentication::UserId;
 use crate::domain::SubscriberEmail;
 use crate::email_client::EmailClient;
+use crate::idempotency::get_saved_response;
+use crate::idempotency::save_response;
+use crate::idempotency::IdempotencyKey;
 use crate::routes::error_chain_fmt;
+use crate::utils::e400;
+use crate::utils::e500;
 use actix_web::http::header;
 use actix_web::http::StatusCode;
 use actix_web::Either;
@@ -49,6 +54,7 @@ impl ResponseError for PublishError {
 pub struct BodyData {
     title: String,
     content: Content,
+    idempotency_key: IdempotencyKey,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -62,6 +68,7 @@ pub struct FormData {
     title: String,
     html_content: String,
     text_content: String,
+    idempotency_key: String,
 }
 
 #[tracing::instrument(name = "Publish a newsletter", skip(body, pool, email_client), fields(user_id=tracing::field::Empty))]
@@ -70,7 +77,7 @@ pub async fn publish_newsletter(
     pool: web::Data<PgPool>,
     email_client: web::Data<EmailClient>,
     user_id: web::ReqData<UserId>,
-) -> Result<HttpResponse, PublishError> {
+) -> Result<HttpResponse, actix_web::Error> {
     tracing::Span::current().record("user_id", &tracing::field::display(*user_id));
 
     let response_type;
@@ -83,6 +90,7 @@ pub async fn publish_newsletter(
                     html: json.content.html.to_owned(),
                     text: json.content.text.to_owned(),
                 },
+                idempotency_key: json.idempotency_key.clone(),
             }
         }
         Either::Left(form) => {
@@ -93,11 +101,20 @@ pub async fn publish_newsletter(
                     html: form.html_content.to_owned(),
                     text: form.text_content.to_owned(),
                 },
+                idempotency_key: form.idempotency_key.clone().try_into().map_err(e400)?,
             }
         }
     };
 
-    let subscribers = get_confirmed_subscribers(&pool).await?;
+    if let Some(saved_response) = get_saved_response(&pool, &body.idempotency_key, **user_id)
+        .await
+        .map_err(e500)?
+    {
+        FlashMessage::info("The newsletter issue has been published.").send();
+        return Ok(saved_response);
+    }
+
+    let subscribers = get_confirmed_subscribers(&pool).await.map_err(e500)?;
 
     let mut sent = 0u16;
     let mut errored = 0u16;
@@ -112,9 +129,8 @@ pub async fn publish_newsletter(
                         &body.content.text,
                     )
                     .await
-                    .with_context(|| {
-                        format!("Failed to send newsletter to {}", subscriber.email)
-                    })?;
+                    .with_context(|| format!("Failed to send newsletter to {}", subscriber.email))
+                    .map_err(e500)?;
                 sent += 1;
             }
             Err(error) => {
@@ -132,8 +148,9 @@ pub async fn publish_newsletter(
     // Should probably return same data in a JSON response...
     let response = match response_type.as_str() {
         "html" => {
+            // yes, this slightly breaks idempotency
             FlashMessage::info(format!(
-                "Newsletter sent - {} successfully, {} with errors.",
+                "The newsletter issue has been published. {} successfully, {} with errors.",
                 sent, errored
             ))
             .send();
@@ -143,6 +160,9 @@ pub async fn publish_newsletter(
         }
         _ => HttpResponse::Ok().finish(),
     };
+    let response = save_response(&pool, &body.idempotency_key, **user_id, response)
+        .await
+        .map_err(e500)?;
     Ok(response)
 }
 

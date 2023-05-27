@@ -7,6 +7,7 @@ pub async fn publish_newsletter_form(flash_messages: IncomingFlashMessages) -> H
     for m in flash_messages.iter() {
         writeln!(msg_html, "<p><i>{}</i></p>", m.content()).unwrap();
     }
+    let idempotency_key = uuid::Uuid::new_v4().to_string();
     HttpResponse::Ok()
         .content_type(ContentType::html())
         .body(format!(
@@ -50,6 +51,7 @@ pub async fn publish_newsletter_form(flash_messages: IncomingFlashMessages) -> H
               <body>
                 {msg_html}
                 <form method="post" action="/admin/newsletters">
+                  <input type="hidden" name="idempotency_key" value="{idempotency_key}">
                   <div>
                     <label for="title">Title</label>
                       <input
