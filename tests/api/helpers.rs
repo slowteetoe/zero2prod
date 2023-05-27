@@ -74,6 +74,14 @@ impl TestUser {
         .await
         .expect("failed to create test users");
     }
+
+    pub async fn login(&self, app: &TestApp) {
+        app.post_login(&serde_json::json!({
+            "username": &self.username,
+            "password": &self.password,
+        }))
+        .await;
+    }
 }
 
 impl TestApp {
@@ -121,6 +129,15 @@ impl TestApp {
             .send()
             .await
             .expect("failed to execute request")
+    }
+
+    pub async fn post_newsletters_form(&self, body: &serde_json::Value) -> reqwest::Response {
+        self.api_client
+            .post(&format!("{}/admin/newsletters", &self.server_address))
+            .form(&body)
+            .send()
+            .await
+            .expect("Failed to execute request")
     }
 
     pub async fn post_newsletters(&self, body: serde_json::Value) -> reqwest::Response {
