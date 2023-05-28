@@ -1,9 +1,13 @@
 use crate::helpers::{assert_is_redirected_to, spawn_app, ConfirmationLinks, TestApp};
 
+use fake::{
+    faker::{internet::en::SafeEmail, name::en::Name},
+    Fake,
+};
 use std::time::Duration;
 use wiremock::{
     matchers::{any, method, path},
-    Mock, ResponseTemplate,
+    Mock, MockBuilder, ResponseTemplate,
 };
 
 #[tokio::test]
@@ -228,8 +232,63 @@ async fn concurrent_form_submission_is_handled_gracefully() {
     );
 }
 
+fn when_sending_an_email() -> MockBuilder {
+    Mock::given(path("/email")).and(method("POST"))
+}
+
+#[tokio::test]
+async fn transient_errors_do_not_cause_duplicate_deliveries_on_retry() {
+    let app = spawn_app().await;
+    let newsletter_request_body = serde_json::json!({
+        "title": "Newsletter title",
+            "text_content": "Newsletter body as plain text",
+            "html_content": "<p>Newsletter body as html</p>",
+        "idempotency_key": uuid::Uuid::new_v4().to_string(),
+    });
+    // Two subscribers instead of just one
+    create_confirmed_subscriber(&app).await;
+    create_confirmed_subscriber(&app).await;
+    app.test_user.login(&app).await;
+
+    // submit newsletter form, delivery fails for the second subscriber
+    when_sending_an_email()
+        .respond_with(ResponseTemplate::new(200))
+        .up_to_n_times(1)
+        .expect(1)
+        .mount(&app.email_server)
+        .await;
+    when_sending_an_email()
+        .respond_with(ResponseTemplate::new(500))
+        .up_to_n_times(1)
+        .expect(1)
+        .mount(&app.email_server)
+        .await;
+
+    let response = app.post_newsletters_form(&newsletter_request_body).await;
+    assert_eq!(response.status().as_u16(), 500);
+
+    // Now retry sending the form, email delivery will succeed for both users now
+    when_sending_an_email()
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .named("Delivery Retry")
+        .mount(&app.email_server)
+        .await;
+
+    let response = app.post_newsletters_form(&newsletter_request_body).await;
+    assert_eq!(response.status().as_u16(), 303);
+
+    // Mock verifies on Drop that we did not send out duplicates
+}
+
 async fn create_unconfirmed_subscriber(app: &TestApp) -> ConfirmationLinks {
-    let body = "name=pepe&email=pepelepew@example.com";
+    let name: String = Name().fake();
+    let email: String = SafeEmail().fake();
+    let body = serde_urlencoded::to_string(&serde_json::json!({
+        "name": name,
+        "email": email,
+    }))
+    .unwrap();
 
     // since we are using 'mount_as_scoped', we get back a MockGuard, when that goes out of scope
     // the Drop impl causes the underlying MockServer to stop supporting this route AND check the expectation(s)
