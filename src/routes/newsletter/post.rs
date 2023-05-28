@@ -1,9 +1,10 @@
 use crate::authentication::UserId;
 use crate::domain::SubscriberEmail;
 use crate::email_client::EmailClient;
-use crate::idempotency::get_saved_response;
 use crate::idempotency::save_response;
+use crate::idempotency::try_processing;
 use crate::idempotency::IdempotencyKey;
+use crate::idempotency::NextAction;
 use crate::routes::error_chain_fmt;
 use crate::utils::e400;
 use crate::utils::e500;
@@ -105,14 +106,18 @@ pub async fn publish_newsletter(
             }
         }
     };
+    let idempotency_key = body.idempotency_key;
 
-    if let Some(saved_response) = get_saved_response(&pool, &body.idempotency_key, **user_id)
+    let transaction = match try_processing(&pool, &idempotency_key, **user_id)
         .await
         .map_err(e500)?
     {
-        FlashMessage::info("The newsletter issue has been published.").send();
-        return Ok(saved_response);
-    }
+        NextAction::StartProcessing(t) => t,
+        NextAction::ReturnSavedResponse(saved_response) => {
+            success_message().send();
+            return Ok(saved_response);
+        }
+    };
 
     let subscribers = get_confirmed_subscribers(&pool).await.map_err(e500)?;
 
@@ -160,10 +165,15 @@ pub async fn publish_newsletter(
         }
         _ => HttpResponse::Ok().finish(),
     };
-    let response = save_response(&pool, &body.idempotency_key, **user_id, response)
+
+    let response = save_response(transaction, &idempotency_key, **user_id, response)
         .await
         .map_err(e500)?;
     Ok(response)
+}
+
+fn success_message() -> FlashMessage {
+    FlashMessage::info("The newsletter issue has been published!")
 }
 
 #[derive(Debug)]

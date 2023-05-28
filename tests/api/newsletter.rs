@@ -1,6 +1,5 @@
 use crate::helpers::{assert_is_redirected_to, spawn_app, ConfirmationLinks, TestApp};
 
-use actix_web::rt::spawn;
 use std::time::Duration;
 use wiremock::{
     matchers::{any, method, path},
