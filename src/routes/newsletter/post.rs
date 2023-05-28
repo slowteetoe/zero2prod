@@ -17,6 +17,9 @@ use anyhow::Context;
 use reqwest::header::HeaderValue;
 use reqwest::header::LOCATION;
 use sqlx::PgPool;
+use sqlx::Postgres;
+use sqlx::Transaction;
+use uuid::Uuid;
 
 #[derive(thiserror::Error)]
 pub enum PublishError {
@@ -174,6 +177,34 @@ pub async fn publish_newsletter(
 
 fn success_message() -> FlashMessage {
     FlashMessage::info("The newsletter issue has been published!")
+}
+
+#[tracing::instrument(skip_all)]
+async fn insert_newsletter_issue(
+    transaction: &mut Transaction<'static, Postgres>,
+    title: &str,
+    html_content: &str,
+    text_content: &str,
+) -> Result<Uuid, sqlx::Error> {
+    let newsletter_issue_id = Uuid::new_v4();
+    sqlx::query!(
+        r#"
+        INSERT INTO newsletter_issues (
+            newsletter_issue_id,
+            title,
+            text_content,
+            html_content,
+            published_at
+        ) VALUES ($1, $2, $3, $4, now())
+    "#,
+        newsletter_issue_id,
+        title,
+        text_content,
+        html_content
+    )
+    .execute(transaction)
+    .await?;
+    Ok(newsletter_issue_id)
 }
 
 #[derive(Debug)]
