@@ -7,7 +7,7 @@ use fake::{
 use std::time::Duration;
 use wiremock::{
     matchers::{any, method, path},
-    Mock, MockBuilder, ResponseTemplate,
+    Mock, ResponseTemplate,
 };
 
 #[tokio::test]
@@ -24,10 +24,8 @@ async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
 
     let newsletter_request_body = serde_json::json!({
         "title":"Newsletter title",
-        "content": {
-            "text": "Newsletter body as text",
-            "html": "<p>Newsletter body as html</p>",
-        },
+        "text_content": "Newsletter body as text",
+        "html_content": "<p>Newsletter body as html</p>",
         "idempotency_key": uuid::Uuid::new_v4().to_string(),
     });
 
@@ -38,9 +36,11 @@ async fn newsletters_are_not_delivered_to_unconfirmed_subscribers() {
     }))
     .await;
 
-    let response = app.post_newsletters(newsletter_request_body).await;
+    let response = app.post_newsletters_form(&newsletter_request_body).await;
 
-    assert_eq!(response.status().as_u16(), 200);
+    assert_eq!(response.status().as_u16(), 303);
+
+    app.dispatch_all_pending_emails().await;
     // Mock verifies on drop that we haven't sent the newsletter email
 }
 
@@ -57,15 +57,6 @@ async fn newsletters_are_delivered_to_confirmed_subscribers() {
         .mount(&app.email_server)
         .await;
 
-    let newsletter_request_body = serde_json::json!({
-        "title": "Newsletter title",
-        "content": {
-            "text": "Newsletter body as plain text",
-            "html": "<p>Newsletter body as html</p>",
-        },
-        "idempotency_key": uuid::Uuid::new_v4().to_string(),
-    });
-
     // login
     app.post_login(&serde_json::json!({
         "username": &app.test_user.username,
@@ -73,9 +64,18 @@ async fn newsletters_are_delivered_to_confirmed_subscribers() {
     }))
     .await;
 
-    let response = app.post_newsletters(newsletter_request_body).await;
+    let newsletter_request_body = serde_json::json!({
+        "title":"Newsletter title",
+        "text_content": "Newsletter body as text",
+        "html_content": "<p>Newsletter body as html</p>",
+        "idempotency_key": uuid::Uuid::new_v4().to_string(),
+    });
 
-    assert_eq!(response.status().as_u16(), 200);
+    let response = app.post_newsletters_form(&newsletter_request_body).await;
+
+    assert_eq!(response.status().as_u16(), 303);
+
+    app.dispatch_all_pending_emails().await;
     // mock verifies on Drop that we have sent the newsletter email
 }
 
@@ -180,7 +180,7 @@ async fn newsletter_creation_is_idempotent() {
     // follow the redirect
     let html_page = app.get_admin_dashboard_html().await;
     assert!(
-        html_page.contains("The newsletter issue has been published"),
+        html_page.contains("The newsletter issue has been accepted - emails will go out shortly"),
         "{}",
         html_page
     );
@@ -192,10 +192,11 @@ async fn newsletter_creation_is_idempotent() {
     // follow the redirect
     let html_page = app.get_admin_dashboard_html().await;
     assert!(
-        html_page.contains("The newsletter issue has been published"),
+        html_page.contains("The newsletter issue has been accepted - emails will go out shortly"),
         "{}",
         html_page
     );
+    app.dispatch_all_pending_emails().await;
 }
 
 #[tokio::test]
@@ -230,55 +231,8 @@ async fn concurrent_form_submission_is_handled_gracefully() {
         response1.text().await.unwrap(),
         response2.text().await.unwrap()
     );
-}
 
-fn when_sending_an_email() -> MockBuilder {
-    Mock::given(path("/email")).and(method("POST"))
-}
-
-#[tokio::test]
-async fn transient_errors_do_not_cause_duplicate_deliveries_on_retry() {
-    let app = spawn_app().await;
-    let newsletter_request_body = serde_json::json!({
-        "title": "Newsletter title",
-            "text_content": "Newsletter body as plain text",
-            "html_content": "<p>Newsletter body as html</p>",
-        "idempotency_key": uuid::Uuid::new_v4().to_string(),
-    });
-    // Two subscribers instead of just one
-    create_confirmed_subscriber(&app).await;
-    create_confirmed_subscriber(&app).await;
-    app.test_user.login(&app).await;
-
-    // submit newsletter form, delivery fails for the second subscriber
-    when_sending_an_email()
-        .respond_with(ResponseTemplate::new(200))
-        .up_to_n_times(1)
-        .expect(1)
-        .mount(&app.email_server)
-        .await;
-    when_sending_an_email()
-        .respond_with(ResponseTemplate::new(500))
-        .up_to_n_times(1)
-        .expect(1)
-        .mount(&app.email_server)
-        .await;
-
-    let response = app.post_newsletters_form(&newsletter_request_body).await;
-    assert_eq!(response.status().as_u16(), 500);
-
-    // Now retry sending the form, email delivery will succeed for both users now
-    when_sending_an_email()
-        .respond_with(ResponseTemplate::new(200))
-        .expect(1)
-        .named("Delivery Retry")
-        .mount(&app.email_server)
-        .await;
-
-    let response = app.post_newsletters_form(&newsletter_request_body).await;
-    assert_eq!(response.status().as_u16(), 303);
-
-    // Mock verifies on Drop that we did not send out duplicates
+    app.dispatch_all_pending_emails().await;
 }
 
 async fn create_unconfirmed_subscriber(app: &TestApp) -> ConfirmationLinks {
